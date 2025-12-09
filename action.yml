@@ -89,7 +89,14 @@ runs:
         TARGET="$HOME/.sedstart"
         mkdir -p "$TARGET"
 
-        DOWNLOAD_URL="http://cli.sedstart.com/latest/${CLI_DIR}/${BINARY_NAME}"
+        ENVIRONMENT="<< parameters.environment >>"
+        case "$ENVIRONMENT" in
+          QA)   DOWNLOAD_BASE="http://cli.sedinqa.com/latest" ;;
+          PROD|"") DOWNLOAD_BASE="http://cli.sedstart.com/latest" ;;
+          *)    echo "Unknown environment '$ENVIRONMENT', defaulting to PROD"; DOWNLOAD_BASE="http://cli.sedstart.com/latest" ;;
+        esac
+
+        DOWNLOAD_URL="${DOWNLOAD_BASE}/${CLI_DIR}/${BINARY_NAME}"
         echo "==> Downloading sedstart from: $DOWNLOAD_URL"
         curl -fL "$DOWNLOAD_URL" -o "${TARGET}/${BINARY_NAME}"
         chmod +x "${TARGET}/${BINARY_NAME}"
