@@ -1,0 +1,249 @@
+name: "Run CI on Sedstart No-Code Platform"
+description: "Download sedstart CLI for runner OS/arch, create config and run tests"
+author: "Atmaram Naik / Sedstart"
+branding:
+  icon: "play"
+  color: "blue"
+
+inputs:
+  api_key:
+    description: "APIKey for authentication (pass as a secret)"
+    required: true
+  project_id:
+    description: "Project ID"
+    required: true
+  test_id:
+    description: "Test ID (mutually exclusive with suite_id; set 0 if unused)"
+    required: true
+  suite_id:
+    description: "Suite ID (mutually exclusive with test_id; set 0 if unused)"
+    required: false
+    default: "0"
+  profile_id:
+    description: "Profile ID"
+    required: true
+  browser:
+    description: "Browser to run the test (e.g., chrome)"
+    required: false
+    default: "chrome"
+  headless:
+    description: "Run in headless mode (true/false). If 'false' action will attempt to setup Xvfb on Linux"
+    required: false
+    default: "false"
+  environment:
+    description: "Environment to run on: QA or PROD (default: PROD)"
+    required: false
+    default: "PROD"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Prepare env (expose secret as env var)
+      shell: bash
+      env:
+        SEDSTART_API_KEY: ${{ inputs.api_key }}
+      run: |
+        # Ensure the secret is available to subsequent steps in this job
+        echo "SEDSTART_API_KEY=${SEDSTART_API_KEY}" >> $GITHUB_ENV
+        echo "SEDSTART_PROJECT_ID=${{ inputs.project_id }}" >> $GITHUB_ENV
+        echo "SEDSTART_PROFILE_ID=${{ inputs.profile_id }}" >> $GITHUB_ENV
+        echo "SEDSTART_TEST_ID=${{ inputs.test_id }}" >> $GITHUB_ENV
+        echo "SEDSTART_SUITE_ID=${{ inputs.suite_id }}" >> $GITHUB_ENV
+        echo "SEDSTART_BROWSER=${{ inputs.browser }}" >> $GITHUB_ENV
+        echo "SEDSTART_ENV=${{ inputs.environment }}" >> $GITHUB_ENV
+        echo "SEDSTART_HEADLESS=${{ inputs.headless }}" >> $GITHUB_ENV
+
+    - name: Install sedstart (Linux/macOS)
+      if: ${{ runner.os != 'Windows' }}
+      shell: bash
+      run: |
+        set -eo pipefail
+
+        echo "==> Detecting platform"
+        OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        case "$OS" in
+          linux) PLATFORM_OS="linux" ;;
+          darwin) PLATFORM_OS="darwin" ;;
+          *) echo "Unsupported OS: $OS"; exit 1 ;;
+        esac
+
+        ARCH="$(uname -m)"
+        case "$ARCH" in
+          x86_64|amd64) PLATFORM_ARCH="amd64" ;;
+          arm64|aarch64) PLATFORM_ARCH="arm64" ;;
+          i386|i686) PLATFORM_ARCH="386" ;;
+          *) echo "Unsupported ARCH: $ARCH"; exit 1 ;;
+        esac
+
+        case "$PLATFORM_OS/$PLATFORM_ARCH" in
+          darwin/amd64)  VARIANT="v1"   ;;
+          darwin/arm64)  VARIANT="v8.0" ;;
+          linux/amd64)   VARIANT="v1"   ;;
+          linux/arm64)   VARIANT="v8.0" ;;
+          linux/386)     VARIANT="sse2" ;;
+          *) echo "No variant mapping for $PLATFORM_OS/$PLATFORM_ARCH"; exit 1 ;;
+        esac
+
+        CLI_DIR="cli_${PLATFORM_OS}_${PLATFORM_ARCH}_${VARIANT}"
+        BINARY_NAME="sedstart"
+        TARGET="$HOME/.sedstart"
+        mkdir -p "$TARGET"
+
+        ENVIRONMENT="<< parameters.environment >>"
+        case "$ENVIRONMENT" in
+          QA)   DOWNLOAD_BASE="http://cli.sedinqa.com/latest" ;;
+          PROD|"") DOWNLOAD_BASE="http://cli.sedstart.com/latest" ;;
+          *)    echo "Unknown environment '$ENVIRONMENT', defaulting to PROD"; DOWNLOAD_BASE="http://cli.sedstart.com/latest" ;;
+        esac
+
+        DOWNLOAD_URL="${DOWNLOAD_BASE}/${CLI_DIR}/${BINARY_NAME}"
+        echo "==> Downloading sedstart from: $DOWNLOAD_URL"
+        curl -fL "$DOWNLOAD_URL" -o "${TARGET}/${BINARY_NAME}"
+        chmod +x "${TARGET}/${BINARY_NAME}"
+
+        # decide URL based on environment input
+        ENVIRONMENT="${{ inputs.environment }}"
+        case "$ENVIRONMENT" in
+          QA)   SEDSTART_URL="https://sedstart.sedinqa.com/api" ;;
+          PROD|"") SEDSTART_URL="https://app.sedstart.com/api" ;;
+          *)    echo "Unknown environment '$ENVIRONMENT', defaulting to PROD"; SEDSTART_URL="https://app.sedstart.com/api" ;;
+        esac
+
+        CONFIG_PATH="${TARGET}/default.env"
+        # Write config with literal env var reference for the key (do not write the raw secret)
+        {
+          echo "url=${SEDSTART_URL}"
+          echo "key=\$SEDSTART_API_KEY"
+          echo "project=${{ inputs.project_id }}"
+          echo "profile=${{ inputs.profile_id }}"
+        } > "${CONFIG_PATH}"
+
+        if [ "${{ inputs.headless }}" = "true" ]; then
+          echo "headless=true" >> "${CONFIG_PATH}"
+        else
+          echo "headless=false" >> "${CONFIG_PATH}"
+        fi
+
+        echo "default.env generated:"
+        cat "${CONFIG_PATH}"
+
+        # expose CLI path to job
+        echo "${TARGET}" >> $GITHUB_PATH
+        echo "sedstart installed to ${TARGET}; config at ${CONFIG_PATH}"
+
+    - name: Install sedstart (Windows)
+      if: ${{ runner.os == 'Windows' }}
+      shell: powershell
+      run: |
+        $os = "windows"
+        if ($Env:PROCESSOR_ARCHITECTURE -match "ARM64") { $arch = "arm64" }
+        elseif ($Env:PROCESSOR_ARCHITECTURE -match "AMD64") { $arch = "amd64" }
+        else { $arch = "386" }
+
+        switch ("$os/$arch") {
+          "windows/amd64" { $variant = "v1" }
+          "windows/arm64" { $variant = "v8.0" }
+          "windows/386"   { $variant = "sse2" }
+          default { throw "No variant mapping for $os/$arch" }
+        }
+
+        $cliDir = "cli_${os}_${arch}_${variant}"
+        $binaryName = "sedstart.exe"
+        $targetDir = Join-Path $Env:USERPROFILE ".sedstart"
+        New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+
+        switch ("${{ inputs.environment }}") {
+          "QA" { $downloadBase = "http://cli.sedinqa.com/latest" }
+          default { $downloadBase = "http://cli.sedstart.com/latest" }
+        }
+
+        $downloadUrl = "$downloadBase/$cliDir/$binaryName"
+        Write-Host "Downloading $downloadUrl"
+        Invoke-WebRequest -Uri $downloadUrl -OutFile (Join-Path $targetDir $binaryName) -UseBasicParsing
+
+        # API base URL for config
+        switch ("${{ inputs.environment }}") {
+          "QA" { $sedUrl = "https://sedstart.sedinqa.com/api" }
+          default { $sedUrl = "https://app.sedstart.com/api" }
+        }
+
+        $configPath = Join-Path $targetDir "default.env"
+        @(
+          "url=$sedUrl"
+          "key=`$SEDSTART_API_KEY"
+          "project=${{ inputs.project_id }}"
+          "profile=${{ inputs.profile_id }}"
+        ) | Out-File -FilePath $configPath -Encoding utf8
+
+        if ('${{ inputs.headless }}' -eq 'true') {
+          Add-Content $configPath "headless=true"
+        } else {
+          Add-Content $configPath "headless=false"
+        }
+        
+        # add to PATH for job
+        Add-Content -Path $Env:GITHUB_PATH -Value $targetDir
+        Write-Host "sedstart installed to $targetDir; config at $configPath"
+
+    - name: Run sedstart (Linux/macOS)
+      if: ${{ runner.os != 'Windows' }}
+      shell: bash
+      env:
+        SEDSTART_API_KEY: ${{ inputs.api_key }}
+      run: |
+        set -eo pipefail
+
+        if [ "${{ inputs.project_id }}" -eq 0 ] || [ "${{ inputs.profile_id }}" -eq 0 ]; then
+          echo "ERROR: project_id and profile_id are required and must be non-zero."
+          exit 1
+        fi
+
+        if [ "${{ inputs.test_id }}" -gt 0 ] && [ "${{ inputs.suite_id }}" -gt 0 ]; then
+          echo "ERROR: Both test_id and suite_id are set. Provide only one."
+          exit 1
+        fi
+
+        if [ "${{ inputs.test_id }}" -eq 0 ] && [ "${{ inputs.suite_id }}" -eq 0 ]; then
+          echo "ERROR: Neither test_id nor suite_id are set. Provide one."
+          exit 1
+        fi
+
+        cd "$HOME/.sedstart"
+        echo "PWD=$(pwd)"
+        echo "Running sedstart; browser=${{ inputs.browser }}"
+
+        if [ "${{ inputs.headless }}" = "false" ] && [ "$(uname -s | tr '[:upper:]' '[:lower:]')" = "linux" ]; then
+          if [ "${{ inputs.test_id }}" -gt 0 ]; then
+            xvfb-run -a ./sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -t "${{ inputs.test_id }}" -e default.env
+          else
+            xvfb-run -a ./sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -s "${{ inputs.suite_id }}" -e default.env
+          fi
+        else
+          # macOS or headless Linux
+          if [ "${{ inputs.test_id }}" -gt 0 ]; then
+            ./sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -t "${{ inputs.test_id }}" -e default.env
+          else
+            ./sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -s "${{ inputs.suite_id }}" -e default.env
+          fi
+        fi
+
+    - name: Run sedstart (Windows)
+      if: ${{ runner.os == 'Windows' }}
+      shell: powershell
+      env:
+        SEDSTART_API_KEY: ${{ inputs.api_key }}
+      run: |
+        if (${int('${{ inputs.project_id }}')} -eq 0 -or ${int('${{ inputs.profile_id }}')} -eq 0) { Write-Error "project_id and profile_id are required and must be non-zero."; exit 1 }
+        if ([int]${{ inputs.test_id }} -gt 0 -and [int]${{ inputs.suite_id }} -gt 0) { Write-Error "Both test_id and suite_id are set. Provide only one."; exit 1 }
+        if ([int]${{ inputs.test_id }} -eq 0 -and [int]${{ inputs.suite_id }} -eq 0) { Write-Error "Neither test_id nor suite_id are set. Provide one."; exit 1 }
+
+        $targetDir = Join-Path $env:USERPROFILE ".sedstart"
+        Push-Location $targetDir
+        $exe = Join-Path $targetDir "sedstart.exe"
+        Write-Host "Running $exe"
+        if ([int]${{ inputs.test_id }} -gt 0) {
+          & $exe run -b $env:SEDSTART_BROWSER -p $env:SEDSTART_PROJECT_ID -d $env:SEDSTART_PROFILE_ID -t $env:SEDSTART_TEST_ID -e default.env
+        } else {
+          & $exe run -b $env:SEDSTART_BROWSER -p $env:SEDSTART_PROJECT_ID -d $env:SEDSTART_PROFILE_ID -s $env:SEDSTART_SUITE_ID -e default.env
+        }
+
