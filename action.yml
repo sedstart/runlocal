@@ -38,6 +38,28 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        fail() {
+          echo "::error::$1"
+          exit 1
+        }
+
+        [ -z "${{ inputs.project_id }}" ] && fail "project_id is required"
+        [ -z "${{ inputs.profile_id }}" ] && fail "profile_id is required"
+        [ -z "${{ inputs.api_key }}" ] && fail "api_key is required"
+
+        if [ "${{ inputs.test_id }}" != "0" ] && [ "${{ inputs.suite_id }}" != "0" ]; then
+          fail "Provide only one of test_id or suite_id"
+        fi
+
+        if [ "${{ inputs.test_id }}" = "0" ] && [ "${{ inputs.suite_id }}" = "0" ]; then
+          fail "Provide one of test_id or suite_id"
+        fi
+
     - name: Prepare env (expose secret as env var)
       shell: bash
       env:
