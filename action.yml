@@ -7,7 +7,7 @@ branding:
 
 inputs:
   api_key:
-    description: "APIKey for authentication (pass as a secret)"
+    description: "APIKey for authentication"
     required: true
   project_id:
     description: "Project ID"
@@ -23,11 +23,11 @@ inputs:
     description: "Profile ID"
     required: true
   browser:
-    description: "Browser to run the test (e.g., chrome)"
+    description: "Browser to run the test"
     required: false
     default: "chrome"
   headless:
-    description: "Run in headless mode (true/false). If 'false' action will attempt to setup Xvfb on Linux"
+    description: "Run in headless mode (true/false)"
     required: false
     default: "false"
   environment:
@@ -38,12 +38,33 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Prepare env (expose secret as env var)
+    - name: Validate inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        fail() {
+          echo "::error::$1"
+          exit 1
+        }
+
+        [ -z "${{ inputs.project_id }}" ] && fail "project_id is required"
+        [ -z "${{ inputs.profile_id }}" ] && fail "profile_id is required"
+        [ -z "${{ inputs.api_key }}" ] && fail "api_key is required"
+
+        if [ "${{ inputs.test_id }}" != "0" ] && [ "${{ inputs.suite_id }}" != "0" ]; then
+          fail "Provide only one of test_id or suite_id"
+        fi
+
+        if [ "${{ inputs.test_id }}" = "0" ] && [ "${{ inputs.suite_id }}" = "0" ]; then
+          fail "Provide one of test_id or suite_id"
+        fi
+
+    - name: Prepare env
       shell: bash
       env:
         SEDSTART_API_KEY: ${{ inputs.api_key }}
       run: |
-        # Ensure the secret is available to subsequent steps in this job
         echo "SEDSTART_API_KEY=${SEDSTART_API_KEY}" >> $GITHUB_ENV
         echo "SEDSTART_PROJECT_ID=${{ inputs.project_id }}" >> $GITHUB_ENV
         echo "SEDSTART_PROFILE_ID=${{ inputs.profile_id }}" >> $GITHUB_ENV
@@ -53,7 +74,7 @@ runs:
         echo "SEDSTART_ENV=${{ inputs.environment }}" >> $GITHUB_ENV
         echo "SEDSTART_HEADLESS=${{ inputs.headless }}" >> $GITHUB_ENV
 
-    - name: Install sedstart (Linux/macOS)
+    - name: Install sedstart
       if: ${{ runner.os != 'Windows' }}
       shell: bash
       run: |
@@ -110,7 +131,7 @@ runs:
         esac
 
         CONFIG_PATH="${TARGET}/default.env"
-        # Write config with literal env var reference for the key (do not write the raw secret)
+        # Write config with literal env var reference for the key
         {
           echo "url=${SEDSTART_URL}"
           echo "key=\$SEDSTART_API_KEY"
@@ -127,7 +148,6 @@ runs:
         echo "default.env generated:"
         cat "${CONFIG_PATH}"
 
-        # expose CLI path to job
         echo "${TARGET}" >> $GITHUB_PATH
         echo "sedstart installed to ${TARGET}; config at ${CONFIG_PATH}"
 
@@ -161,7 +181,7 @@ runs:
         Write-Host "Downloading $downloadUrl"
         Invoke-WebRequest -Uri $downloadUrl -OutFile (Join-Path $targetDir $binaryName) -UseBasicParsing
 
-        # API base URL for config
+        # API base
         switch ("${{ inputs.environment }}") {
           "QA" { $sedUrl = "https://sedstart.sedinqa.com/api" }
           default { $sedUrl = "https://app.sedstart.com/api" }
@@ -181,11 +201,10 @@ runs:
           Add-Content $configPath "headless=false"
         }
         
-        # add to PATH for job
         Add-Content -Path $Env:GITHUB_PATH -Value $targetDir
         Write-Host "sedstart installed to $targetDir; config at $configPath"
 
-    - name: Run sedstart (Linux/macOS)
+    - name: Run sedstart
       if: ${{ runner.os != 'Windows' }}
       shell: bash
       env:
