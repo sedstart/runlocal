@@ -14,7 +14,8 @@ inputs:
     required: true
   test_id:
     description: "Test ID (mutually exclusive with suite_id; set 0 if unused)"
-    required: true
+    required: false
+    default: "0"
   suite_id:
     description: "Suite ID (mutually exclusive with test_id; set 0 if unused)"
     required: false
