@@ -111,7 +111,7 @@ runs:
         TARGET="$HOME/.sedstart"
         mkdir -p "$TARGET"
 
-        ENVIRONMENT="<< parameters.environment >>"
+        ENVIRONMENT="${{ inputs.environment }}"
         case "$ENVIRONMENT" in
           QA)   DOWNLOAD_BASE="http://cli.sedinqa.com/latest" ;;
           PROD|"") DOWNLOAD_BASE="http://cli.sedstart.com/latest" ;;
