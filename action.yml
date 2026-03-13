@@ -223,16 +223,16 @@ runs:
 
         if [ "${{ inputs.headless }}" = "false" ] && [ "$(uname -s | tr '[:upper:]' '[:lower:]')" = "linux" ]; then
           if [ "${{ inputs.test_id }}" -gt 0 ]; then
-            xvfb-run -a ./sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -t "${{ inputs.test_id }}" -e default.env
+            xvfb-run -a sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -t "${{ inputs.test_id }}" -e default.env
           else
-            xvfb-run -a ./sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -s "${{ inputs.suite_id }}" -e default.env
+            xvfb-run -a sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -s "${{ inputs.suite_id }}" -e default.env
           fi
         else
           # macOS or headless Linux
           if [ "${{ inputs.test_id }}" -gt 0 ]; then
-            ./sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -t "${{ inputs.test_id }}" -e default.env
+            sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -t "${{ inputs.test_id }}" -e default.env
           else
-            ./sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -s "${{ inputs.suite_id }}" -e default.env
+            sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -s "${{ inputs.suite_id }}" -e default.env
           fi
         fi
 
