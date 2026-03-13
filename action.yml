@@ -229,12 +229,12 @@ runs:
         if ([int]${{ inputs.test_id }} -gt 0 -and [int]${{ inputs.suite_id }} -gt 0) { Write-Error "Both test_id and suite_id are set. Provide only one."; exit 1 }
         if ([int]${{ inputs.test_id }} -eq 0 -and [int]${{ inputs.suite_id }} -eq 0) { Write-Error "Neither test_id nor suite_id are set. Provide one."; exit 1 }
 
-        $targetDir = Join-Path $env:USERPROFILE ".sedstart"
-        Push-Location $targetDir
+        $installDir = "$env:LOCALAPPDATA\Programs\sedstart"
+        $exe = Join-Path $installDir "sedstart.exe"
         Write-Host "Running sedstart"
         if ([int]${{ inputs.test_id }} -gt 0) {
-          sedstart run -b $env:SEDSTART_BROWSER -p $env:SEDSTART_PROJECT_ID -d $env:SEDSTART_PROFILE_ID -t $env:SEDSTART_TEST_ID -e default.env
+          & $exe run -b $env:SEDSTART_BROWSER -p $env:SEDSTART_PROJECT_ID -d $env:SEDSTART_PROFILE_ID -t $env:SEDSTART_TEST_ID -e default.env
         } else {
-          sedstart run -b $env:SEDSTART_BROWSER -p $env:SEDSTART_PROJECT_ID -d $env:SEDSTART_PROFILE_ID -s $env:SEDSTART_SUITE_ID -e default.env
+          & $exe run -b $env:SEDSTART_BROWSER -p $env:SEDSTART_PROJECT_ID -d $env:SEDSTART_PROFILE_ID -s $env:SEDSTART_SUITE_ID -e default.env
         }
 
