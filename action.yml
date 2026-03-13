@@ -146,14 +146,13 @@ runs:
       shell: powershell
       run: |
         $os = "windows"
+        Write-Host "Installing sedstart via universal installer"
         $targetDir = Join-Path $Env:USERPROFILE ".sedstart"
         New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
 
-        $installer = iwr https://raw.githubusercontent.com/sedstart/setup/main/install.ps1 -UseBasicParsing | select -Expand Content
-
         switch ("${{ inputs.environment }}") {
-          "QA" { iex "$installer -BaseUrl https://cli.sedinqa.com/latest" }
-          default { iex $installer }
+          "QA" { iex "& { $(iwr https://raw.githubusercontent.com/sedstart/setup/main/install.ps1 -UseBasicParsing) } -BaseUrl 'https://cli.sedinqa.com/latest'" }
+          default { iwr https://raw.githubusercontent.com/sedstart/setup/main/install.ps1 -UseBasicParsing | iex }
         }
 
         # API base
