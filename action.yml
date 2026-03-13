@@ -101,47 +101,17 @@ runs:
       run: |
         set -eo pipefail
 
-        echo "==> Detecting platform"
-        OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-        case "$OS" in
-          linux) PLATFORM_OS="linux" ;;
-          darwin) PLATFORM_OS="darwin" ;;
-          *) echo "Unsupported OS: $OS"; exit 1 ;;
-        esac
-
-        ARCH="$(uname -m)"
-        case "$ARCH" in
-          x86_64|amd64) PLATFORM_ARCH="amd64" ;;
-          arm64|aarch64) PLATFORM_ARCH="arm64" ;;
-          i386|i686) PLATFORM_ARCH="386" ;;
-          *) echo "Unsupported ARCH: $ARCH"; exit 1 ;;
-        esac
-
-        case "$PLATFORM_OS/$PLATFORM_ARCH" in
-          darwin/amd64)  VARIANT="v1"   ;;
-          darwin/arm64)  VARIANT="v8.0" ;;
-          linux/amd64)   VARIANT="v1"   ;;
-          linux/arm64)   VARIANT="v8.0" ;;
-          linux/386)     VARIANT="sse2" ;;
-          *) echo "No variant mapping for $PLATFORM_OS/$PLATFORM_ARCH"; exit 1 ;;
-        esac
-
-        CLI_DIR="cli_${PLATFORM_OS}_${PLATFORM_ARCH}_${VARIANT}"
-        BINARY_NAME="sedstart"
+        echo "==> Installing sedstart via universal installer"
+        
         TARGET="$HOME/.sedstart"
         mkdir -p "$TARGET"
 
         ENVIRONMENT="${{ inputs.environment }}"
         case "$ENVIRONMENT" in
-          QA)   DOWNLOAD_BASE="http://cli.sedinqa.com/latest" ;;
-          PROD|"") DOWNLOAD_BASE="http://cli.sedstart.com/latest" ;;
-          *)    echo "Unknown environment '$ENVIRONMENT', defaulting to PROD"; DOWNLOAD_BASE="http://cli.sedstart.com/latest" ;;
+          QA)    curl -fsSL https://raw.githubusercontent.com/sedstart/setup/main/install.sh | bash -s -- --base-url https://cli.sedinqa.com/latest ;;
+          PROD|"") curl -fsSL https://raw.githubusercontent.com/sedstart/setup/main/install.sh | bash ;;
+          *)    echo "Unknown environment '$ENVIRONMENT', defaulting to PROD"; curl -fsSL https://raw.githubusercontent.com/sedstart/setup/main/install.sh | bash ;;
         esac
-
-        DOWNLOAD_URL="${DOWNLOAD_BASE}/${CLI_DIR}/${BINARY_NAME}"
-        echo "==> Downloading sedstart from: $DOWNLOAD_URL"
-        curl -fL "$DOWNLOAD_URL" -o "${TARGET}/${BINARY_NAME}"
-        chmod +x "${TARGET}/${BINARY_NAME}"
 
         # decide URL based on environment input
         ENVIRONMENT="${{ inputs.environment }}"
@@ -169,7 +139,6 @@ runs:
         echo "default.env generated:"
         cat "${CONFIG_PATH}"
 
-        echo "${TARGET}" >> $GITHUB_PATH
         echo "sedstart installed to ${TARGET}; config at ${CONFIG_PATH}"
 
     - name: Install sedstart (Windows)
