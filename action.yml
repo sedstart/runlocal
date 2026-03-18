@@ -21,8 +21,9 @@ inputs:
     required: false
     default: "0"
   profile_id:
-    description: "Profile ID"
-    required: true
+    description: "Profile ID (optional)"
+    required: false
+    default: "0"
   browser:
     description: "Browser to run the test"
     required: false
@@ -50,7 +51,6 @@ runs:
         }
 
         [ -z "${{ inputs.project_id }}" ] && fail "project_id is required"
-        [ -z "${{ inputs.profile_id }}" ] && fail "profile_id is required"
         [ -z "${{ inputs.api_key }}" ] && fail "api_key is required"
 
         is_number() {
@@ -88,7 +88,9 @@ runs:
       run: |
         echo "SEDSTART_API_KEY=${SEDSTART_API_KEY}" >> $GITHUB_ENV
         echo "SEDSTART_PROJECT_ID=${{ inputs.project_id }}" >> $GITHUB_ENV
-        echo "SEDSTART_PROFILE_ID=${{ inputs.profile_id }}" >> $GITHUB_ENV
+        if [ "${{ inputs.profile_id }}" != "0" ]; then
+          echo "SEDSTART_PROFILE_ID=${{ inputs.profile_id }}" >> $GITHUB_ENV
+        fi
         echo "SEDSTART_TEST_ID=${{ inputs.test_id }}" >> $GITHUB_ENV
         echo "SEDSTART_SUITE_ID=${{ inputs.suite_id }}" >> $GITHUB_ENV
         echo "SEDSTART_BROWSER=${{ inputs.browser }}" >> $GITHUB_ENV
@@ -127,9 +129,12 @@ runs:
           echo "url=${SEDSTART_URL}"
           echo "key=\$SEDSTART_API_KEY"
           echo "project=${{ inputs.project_id }}"
-          echo "profile=${{ inputs.profile_id }}"
         } > "${CONFIG_PATH}"
 
+        if [ "${{ inputs.profile_id }}" != "0" ]; then
+          echo "profile=${{ inputs.profile_id }}" >> "${CONFIG_PATH}"
+        fi
+        
         if [ "${{ inputs.headless }}" = "true" ]; then
           echo "headless=true" >> "${CONFIG_PATH}"
         else
@@ -166,13 +171,16 @@ runs:
           "url=$sedUrl"
           "key=`$SEDSTART_API_KEY"
           "project=${{ inputs.project_id }}"
-          "profile=${{ inputs.profile_id }}"
         ) | Out-File -FilePath $configPath -Encoding utf8
 
         if ('${{ inputs.headless }}' -eq 'true') {
           Add-Content $configPath "headless=true"
         } else {
           Add-Content $configPath "headless=false"
+        }
+
+        if ('${{ inputs.profile_id }}' -ne '0') {
+          Add-Content $configPath "profile=${{ inputs.profile_id }}"
         }
         
         Write-Host "sedstart installed to $targetDir; config at $configPath"
@@ -185,11 +193,11 @@ runs:
       run: |
         set -eo pipefail
 
-        if [ "${{ inputs.project_id }}" -eq 0 ] || [ "${{ inputs.profile_id }}" -eq 0 ]; then
-          echo "ERROR: project_id and profile_id are required and must be non-zero."
+        if [ "${{ inputs.project_id }}" -eq 0 ]; then
+          echo "ERROR: project_id must be non-zero."
           exit 1
         fi
-
+        
         if [ "${{ inputs.test_id }}" -gt 0 ] && [ "${{ inputs.suite_id }}" -gt 0 ]; then
           echo "ERROR: Both test_id and suite_id are set. Provide only one."
           exit 1
@@ -204,18 +212,23 @@ runs:
         echo "PWD=$(pwd)"
         echo "Running sedstart; browser=${{ inputs.browser }}"
 
+        PROFILE_ARG="-d ${{ inputs.profile_id }}"
+        if [ "${{ inputs.profile_id }}" = "0" ]; then
+          PROFILE_ARG=""
+        fi
+
         if [ "${{ inputs.headless }}" = "false" ] && [ "$(uname -s | tr '[:upper:]' '[:lower:]')" = "linux" ]; then
           if [ "${{ inputs.test_id }}" -gt 0 ]; then
-            xvfb-run -a sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -t "${{ inputs.test_id }}" -e default.env
+            xvfb-run -a sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" $PROFILE_ARG -t "${{ inputs.test_id }}" -e default.env
           else
-            xvfb-run -a sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -s "${{ inputs.suite_id }}" -e default.env
+            xvfb-run -a sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" $PROFILE_ARG -s "${{ inputs.suite_id }}" -e default.env
           fi
         else
           # macOS or headless Linux
           if [ "${{ inputs.test_id }}" -gt 0 ]; then
-            sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -t "${{ inputs.test_id }}" -e default.env
+            sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" $PROFILE_ARG -t "${{ inputs.test_id }}" -e default.env
           else
-            sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" -d "${{ inputs.profile_id }}" -s "${{ inputs.suite_id }}" -e default.env
+            sedstart run -b "${{ inputs.browser }}" -p "${{ inputs.project_id }}" $PROFILE_ARG -s "${{ inputs.suite_id }}" -e default.env
           fi
         fi
 
@@ -225,16 +238,22 @@ runs:
       env:
         SEDSTART_API_KEY: ${{ inputs.api_key }}
       run: |
-        if (${int('${{ inputs.project_id }}')} -eq 0 -or ${int('${{ inputs.profile_id }}')} -eq 0) { Write-Error "project_id and profile_id are required and must be non-zero."; exit 1 }
+        if (${int('${{ inputs.project_id }}')} -eq 0) { Write-Error "project_id is required to be non-zero."; exit 1 }
         if ([int]${{ inputs.test_id }} -gt 0 -and [int]${{ inputs.suite_id }} -gt 0) { Write-Error "Both test_id and suite_id are set. Provide only one."; exit 1 }
         if ([int]${{ inputs.test_id }} -eq 0 -and [int]${{ inputs.suite_id }} -eq 0) { Write-Error "Neither test_id nor suite_id are set. Provide one."; exit 1 }
 
         $installDir = "$env:LOCALAPPDATA\Programs\sedstart"
         $exe = Join-Path $installDir "sedstart.exe"
         Write-Host "Running sedstart"
+
+        $profileArg = ""
+        if ('${{ inputs.profile_id }}' -ne '0') {
+          $profileArg = "-d $env:SEDSTART_PROFILE_ID"
+        }
+
         if ([int]${{ inputs.test_id }} -gt 0) {
-          & $exe run -b $env:SEDSTART_BROWSER -p $env:SEDSTART_PROJECT_ID -d $env:SEDSTART_PROFILE_ID -t $env:SEDSTART_TEST_ID -e default.env
+          & $exe run -b $env:SEDSTART_BROWSER -p $env:SEDSTART_PROJECT_ID $profileArg -t $env:SEDSTART_TEST_ID -e default.env
         } else {
-          & $exe run -b $env:SEDSTART_BROWSER -p $env:SEDSTART_PROJECT_ID -d $env:SEDSTART_PROFILE_ID -s $env:SEDSTART_SUITE_ID -e default.env
+          & $exe run -b $env:SEDSTART_BROWSER -p $env:SEDSTART_PROJECT_ID $profileArg -s $env:SEDSTART_SUITE_ID -e default.env
         }
 
